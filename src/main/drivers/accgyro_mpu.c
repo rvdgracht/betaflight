@@ -261,7 +261,7 @@ static void mpuIntExtiInit(gyroDev_t *gyro)
 #else
 
     IOInit(mpuIntIO, OWNER_MPU_EXTI, 0);
-    IOConfigGPIO(mpuIntIO, IOCFG_IN_FLOATING);   // TODO - maybe pullup / pulldown ?
+    IOConfigGPIO(mpuIntIO, GPIO_Mode_IPU);
 
     EXTIHandlerInit(&gyro->exti, mpuIntExtiHandler);
     EXTIConfig(mpuIntIO, &gyro->exti, NVIC_PRIO_MPU_INT_EXTI, EXTI_Trigger_Rising);
