@@ -16,7 +16,7 @@
 #
 
 # The target to build, see VALID_TARGETS below
-TARGET    ?= NAZE
+TARGET    ?= HEXACOPTER
 
 # Compile-time options
 OPTIONS   ?=
