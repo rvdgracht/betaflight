@@ -18,6 +18,7 @@
 #pragma once
 
 #define TARGET_BOARD_IDENTIFIER "HEXA"
+#define TARGET_PREINIT
 
 #define LED0                    PD2 // Blue
 #define LED0_INVERTED
@@ -46,13 +47,10 @@
 //#define USE_BARO_BMP280
 
 // UARTS
-#define USE_UART1	// Debug uart
+#define SERIAL_PORT_COUNT       1
+#define USE_UART1
 #define UART1_TX_PIN            PA9
 #define UART1_RX_PIN            PA10
-#define SERIAL_PORT_COUNT       1
-//#define AVOID_UART2_FOR_PWM_PPM
-//#define USE_ESCSERIAL
-//#define ESCSERIAL_TIMER_TX_HARDWARE 0 // PWM 1
 
 #define USE_I2C
 #define USE_I2C_DEVICE_2
@@ -79,11 +77,10 @@
 #define USE_RX_V202
 #define RX_SPI_DEFAULT_PROTOCOL RX_SPI_NRF24_V202_250K	// Adjust..
 
-
 #endif
 
-
-
+#define USE_RX_MSP
+#define DEFAULT_FEATURES	(FEATURE_FAILSAFE)
 
 // Just in case..
 #ifdef USE_RX_SPI
@@ -102,11 +99,8 @@
 # undef SERIAL_RX
 #endif
 
-
-
-
-
-
+// alternative defaults for target
+#define TARGET_CONFIG
 
 #define TARGET_DEFAULT_MIXER	MIXER_HEX6
 
