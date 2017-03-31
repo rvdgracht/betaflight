@@ -59,7 +59,7 @@ PG_REGISTER_WITH_RESET_TEMPLATE(compassConfig_t, compassConfig, PG_COMPASS_CONFI
 PG_RESET_TEMPLATE(compassConfig_t, compassConfig,
     .mag_align = ALIGN_DEFAULT,
     // xxx_hardware: 0:default/autodetect, 1: disable
-    .mag_hardware = 1,
+    .mag_hardware = MAG_AK8975,
     .mag_declination = 0,
     .interruptTag = COMPASS_INTERRUPT_TAG
 );
