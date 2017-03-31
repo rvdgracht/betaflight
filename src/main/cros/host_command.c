@@ -187,19 +187,19 @@ void host_packet_receive(struct host_packet *pkt)
 	/* If driver indicates error, don't even look at the data */
 	if (pkt->driver_result) {
 		args0.result = pkt->driver_result;
-		goto host_packet_bad;
+		goto host_packet_end;
 	}
 
 	if (pkt->request_size < sizeof(*r)) {
 		/* Packet too small for even a header */
 		args0.result = EC_RES_REQUEST_TRUNCATED;
-		goto host_packet_bad;
+		goto host_packet_end;
 	}
 
 	if (pkt->request_size > pkt->request_max) {
 		/* Got a bigger request than the interface can handle */
 		args0.result = EC_RES_REQUEST_TRUNCATED;
-		goto host_packet_bad;
+		goto host_packet_end;
 	}
 
 	/*
@@ -223,7 +223,7 @@ void host_packet_receive(struct host_packet *pkt)
 	if (r->struct_version != EC_HOST_REQUEST_VERSION) {
 		/* Request header we don't know how to handle */
 		args0.result = EC_RES_INVALID_HEADER;
-		goto host_packet_bad;
+		goto host_packet_end;
 	}
 
 	if (pkt->request_size < sizeof(*r) + r->data_len) {
@@ -234,7 +234,7 @@ void host_packet_receive(struct host_packet *pkt)
 		 * received data is (LPC).
 		 */
 		args0.result = EC_RES_REQUEST_TRUNCATED;
-		goto host_packet_bad;
+		goto host_packet_end;
 	}
 
 	/* Copy request data and validate checksum */
@@ -259,7 +259,7 @@ void host_packet_receive(struct host_packet *pkt)
 	/* Validate checksum */
 	if ((uint8_t)csum) {
 		args0.result = EC_RES_INVALID_CHECKSUM;
-		goto host_packet_bad;
+		goto host_packet_end;
 	}
 
 	/* Set up host command handler args */
@@ -273,18 +273,8 @@ void host_packet_receive(struct host_packet *pkt)
 	args0.response_size = 0;
 	args0.result = EC_RES_SUCCESS;
 
-	/* Chain to host command received */
+host_packet_end:
 	host_command_received(&args0);
-	return;
-
-host_packet_bad:
-	/*
-	 * TODO (crosbug.com/p/29315): This is typically running in interrupt
-	 * context, so it woud be better not to send the response here, and to
-	 * let the host command task send the response.
-	 */
-	/* Improperly formed packet from host, so send an error response */
-	host_packet_respond(&args0);
 }
 
 /**
