@@ -32,7 +32,9 @@
 #include "fc/config.h"
 #include "cros/ec_command.h"
 #include "cros/host_command.h"
+
 #include "bus_spi.h"
+#include "dma.h"
 #include "exti.h"
 #include "io.h"
 #include "io_impl.h"
@@ -44,13 +46,13 @@
 #define CROS_EC_SPI_DMA_CH_RX		DMA1_Channel2
 #endif
 
+#ifndef CROS_EC_SPI_DMA_CH_RX_IRQN
+#define CROS_EC_SPI_DMA_CH_RX_IRQN	DMA1_Channel2_IRQn
+#endif
+
 #ifndef CROS_EC_SPI_DMA_CH_TX
 #define CROS_EC_SPI_DMA_CH_TX		DMA1_Channel3
 #endif
-
-#define DMA1_Channel2_IRQHandler	cros_ec_rx_dma_irq
-
-//#define CROS_IRQ_DEBUG
 
 /*
  * Timeout to wait for SPI request packet
@@ -106,7 +108,8 @@ enum spi_state {
 	SPI_STATE_READY_TO_RX,
 
 	/* Receiving request */
-	SPI_STATE_RECEIVING,
+	SPI_STATE_RECEIVING_HDR,
+	SPI_STATE_RECEIVING_PAY,
 
 	/* Processing request */
 	SPI_STATE_PROCESSING,
@@ -122,6 +125,7 @@ enum spi_state {
 	SPI_STATE_RX_BAD,
 };
 
+
 static struct cros_ec_spi_priv {
 	// Flags
 	enum spi_state state;
@@ -135,6 +139,10 @@ static struct cros_ec_spi_priv {
 	// IRQs
 	NVIC_InitTypeDef nvic_rx_dma;
 	extiCallbackRec_t exti_nss;
+
+	// DMAs
+	DMA_InitTypeDef dma_rx_cfg;
+	DMA_InitTypeDef dma_tx_cfg;
 
 	// IOs
 	IO_t spi_nss;
@@ -164,87 +172,40 @@ static void tx_status(uint8_t byte)
 	SPI_I2S_SendData(CROS_EC_SPI_INSTANCE, byte);
 }
 
-void cros_ec_dma_disable_rx(void)
-{
-	DMA_Cmd(CROS_EC_SPI_DMA_CH_RX, DISABLE);
-}
-
-void cros_ec_dma_disable_tx(void)
-{
-	DMA_Cmd(CROS_EC_SPI_DMA_CH_TX, DISABLE);
-}
-
-void cros_ec_dma_start_rx(unsigned count, void *memory)
-{
-	DMA_InitTypeDef DMA_InitStructure;
-	DMA_StructInit(&DMA_InitStructure);
-	DMA_InitStructure.DMA_PeripheralBaseAddr = CROS_EC_SPI_INSTANCE->DR;
-	DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)memory;
-	DMA_InitStructure.DMA_BufferSize = count;
-	DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;
-	DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
-	DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
-	DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
-
-	DMA_DeInit(CROS_EC_SPI_DMA_CH_RX);
-	DMA_Init(CROS_EC_SPI_DMA_CH_RX, &DMA_InitStructure);
-
-	/* Flush data in write buffer so that DMA can get the lastest data */
-	asm volatile("dsb;");
-
-	DMA_Cmd(CROS_EC_SPI_DMA_CH_RX, ENABLE);
-}
-
-void cros_ec_dma_prep_tx(unsigned count, void *memory)
-{
-	DMA_InitTypeDef DMA_InitStructure;
-	DMA_StructInit(&DMA_InitStructure);
-	DMA_InitStructure.DMA_PeripheralBaseAddr = CROS_EC_SPI_INSTANCE->DR;
-	DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)memory;
-	DMA_InitStructure.DMA_BufferSize = count;
-	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
-	DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;
-	DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
-	DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
-	DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
-
-	DMA_DeInit(CROS_EC_SPI_DMA_CH_TX);
-	DMA_Init(CROS_EC_SPI_DMA_CH_TX, &DMA_InitStructure);
-
-	/* Flush data in write buffer so that DMA can get the lastest data */
-	asm volatile("dsb;");
-
-	DMA_Cmd(CROS_EC_SPI_DMA_CH_TX, ENABLE);
-}
-
-/**
- * Wait until we have received a certain number of bytes
- *
- * Watch the DMA receive channel until it has the required number of bytes,
- * or a timeout occurs
- *
- * We keep an eye on the NSS line - if this goes high then the transaction is
- * over so there is no point in trying to receive the bytes.
- *
- * @param needed	Number of bytes that are needed
- * @return 0 if bytes received, -1 if we hit a timeout or NSS went high
- */
-static int cros_ec_wait_for_bytes(uint32_t needed)
+void cros_ec_dma_start_rx(uint16_t count, uint32_t offset)
 {
 	struct cros_ec_spi_priv *priv = &cros_spi_priv;
 
-	int done;
-	uint32_t start = millis();
+	/* Disable the DMA channel */
+	DMA_Cmd(CROS_EC_SPI_DMA_CH_RX, DISABLE);
 
-	while (1) {
-		done = DMA_GetCurrDataCounter(CROS_EC_SPI_DMA_CH_RX);
-		if ((sizeof(priv->in_msg) - done) >= needed)
-			return 0;
-		if (IORead(priv->spi_nss))
-			return -1;
-		if (millis() - start > SPI_CMD_RX_TIMEOUT_MS)
-			return -1;
+	/* Set bytes to receive */
+	DMA_SetCurrDataCounter(CROS_EC_SPI_DMA_CH_RX, count);
+
+	/* Set position in the receive buffer */
+	CROS_EC_SPI_DMA_CH_RX->CMAR = (uint32_t)(priv->in_msg + offset);
+
+	/* Flush data when starting a new transfer */
+	if (offset == 0) {
+		asm volatile("dsb;");
 	}
+
+	/* Enable the DMA channel */
+	DMA_Cmd(CROS_EC_SPI_DMA_CH_RX, ENABLE);
+}
+
+void cros_ec_dma_start_tx(uint32_t count)
+{
+	/* Disable the DMA channel */
+	DMA_Cmd(CROS_EC_SPI_DMA_CH_TX, DISABLE);
+
+	/* Set bytes to transmit */
+	DMA_SetCurrDataCounter(CROS_EC_SPI_DMA_CH_TX, count);
+
+	asm volatile("dsb;");
+
+	/* Enable the DMA channel */
+	DMA_Cmd(CROS_EC_SPI_DMA_CH_TX, ENABLE);
 }
 
 /*
@@ -289,8 +250,8 @@ static void cros_ec_send_response_packet(struct host_packet *pkt)
 	((uint8_t *)pkt->response)[pkt->response_size + 0] = EC_SPI_PAST_END;
 
 	/* Transmit the reply */
-	cros_ec_dma_prep_tx(sizeof(out_preamble) + pkt->response_size
-		+ EC_SPI_PAST_END_LENGTH, priv->out_msg);
+	cros_ec_dma_start_tx(sizeof(out_preamble) + pkt->response_size +
+		EC_SPI_PAST_END_LENGTH);
 
 	/*
 	 * Before the state is set to SENDING, any CS de-assertion would
@@ -321,7 +282,7 @@ static void cros_ec_setup_transaction(void)
 	priv->state = SPI_STATE_PREPARE_RX;
 
 	/* Stop sending response, if any */
-	cros_ec_dma_disable_tx();
+	DMA_Cmd(CROS_EC_SPI_DMA_CH_TX, DISABLE);
 
 	/*
 	 * Read dummy bytes in case there are some pending; this prevents the
@@ -330,19 +291,16 @@ static void cros_ec_setup_transaction(void)
 	dummy = SPI_I2S_ReceiveData(CROS_EC_SPI_INSTANCE);
 
 	/* Start DMA */
-	cros_ec_dma_start_rx(sizeof(priv->in_msg), priv->in_msg);
+	cros_ec_dma_start_rx(sizeof(struct ec_host_request), 0);
 
 	/* Ready to receive */
 	priv->state = SPI_STATE_READY_TO_RX;
 	tx_status(EC_SPI_OLD_READY);
 }
 
-//#define CROS_IRQ_DEBUG
 static void cros_ec_nss_irq(extiCallbackRec_t *cb)
 {
 	struct cros_ec_spi_priv *priv = &cros_spi_priv;
-	struct ec_host_request *r = (struct ec_host_request *)priv->in_msg;
-	uint32_t pkt_size;
 
 	UNUSED(cb);
 
@@ -350,13 +308,6 @@ static void cros_ec_nss_irq(extiCallbackRec_t *cb)
 	if (priv->state == SPI_STATE_DISABLED)
 		return;
 
-#ifdef CROS_IRQ_DEBUG
-	if (IORead(priv->spi_nss))
-		IOHi(DEFIO_IO(PC0));
-	else
-		IOLo(DEFIO_IO(PC0));
-	return;
-#else
 	/* Check chip select.  If it's high, the AP ended a transaction. */
 	if (IORead(priv->spi_nss)) {
 		/*
@@ -371,7 +322,6 @@ static void cros_ec_nss_irq(extiCallbackRec_t *cb)
 		/* Set up for the next transaction */
 		cros_ec_reinit(); /* Fix for bug chrome-os-partner:31390 */
 		return;
-
 	}
 
 	/* Chip select is low = asserted */
@@ -386,72 +336,58 @@ static void cros_ec_nss_irq(extiCallbackRec_t *cb)
 	}
 
 	/* We're now inside a transaction */
-	priv->state = SPI_STATE_RECEIVING;
+	priv->state = SPI_STATE_RECEIVING_HDR;
 	tx_status(EC_SPI_RECEIVING);
+}
 
-	/* Wait for version, command, length bytes */
-	if (cros_ec_wait_for_bytes(3))
-		goto spi_event_error;
+void cros_ec_rx_dma_irq(struct dmaChannelDescriptor_s *cd)
+{
+	struct cros_ec_spi_priv *priv = &cros_spi_priv;
+	struct ec_host_request *r = (struct ec_host_request *)priv->in_msg;
 
-	if (priv->in_msg[0] != EC_HOST_REQUEST_VERSION)
-		goto spi_event_error;
+	UNUSED(cd);
 
-	/* Wait for the rest of the command header */
-	if (cros_ec_wait_for_bytes(sizeof(*r)))
-		goto spi_event_error;
+	if (priv->state == SPI_STATE_RECEIVING_HDR) {
+		if (r->struct_version != EC_HOST_REQUEST_VERSION)
+			goto spi_event_error;
 
-	/*
-	 * Check how big the packet should be.  We can't just wait to
-	 * see how much data the host sends, because it will keep
-	 * sending dummy data until we respond.
-	 */
-	pkt_size = host_request_expected_size(r);
-	if (pkt_size == 0 || pkt_size > sizeof(priv->in_msg))
-		goto spi_event_error;
+		/* Reconfigure dma ASAP to pull in the remainder */
+		cros_ec_dma_start_rx(r->data_len, sizeof(*r));
 
-	/* Wait for the packet data */
-	if (cros_ec_wait_for_bytes(pkt_size))
-		goto spi_event_error;
+		priv->state = SPI_STATE_RECEIVING_PAY;
+		return;
 
-	spi_packet.send_response = cros_ec_send_response_packet;
+	} else if (priv->state == SPI_STATE_RECEIVING_PAY) {
 
-	spi_packet.request = priv->in_msg;
-	spi_packet.request_temp = NULL;
-	spi_packet.request_max = sizeof(priv->in_msg);
-	spi_packet.request_size = pkt_size;
+		spi_packet.send_response = cros_ec_send_response_packet;
 
-	/* Response must start with the preamble */
-	memcpy(priv->out_msg, out_preamble, sizeof(out_preamble));
-	spi_packet.response = priv->out_msg + sizeof(out_preamble);
-	/* Reserve space for the preamble and trailing past-end byte */
-	spi_packet.response_max = sizeof(priv->out_msg)
-		- sizeof(out_preamble) - EC_SPI_PAST_END_LENGTH;
-	spi_packet.response_size = 0;
+		spi_packet.request = priv->in_msg;
+		spi_packet.request_temp = NULL;
+		spi_packet.request_max = sizeof(priv->in_msg);
+		spi_packet.request_size = sizeof(*r) + r->data_len;
 
-	spi_packet.driver_result = EC_RES_SUCCESS;
+		/* Response must start with the preamble */
+		memcpy(priv->out_msg, out_preamble, sizeof(out_preamble));
+		spi_packet.response = priv->out_msg + sizeof(out_preamble);
+		/* Reserve space for the preamble and trailing past-end byte */
+		spi_packet.response_max = sizeof(priv->out_msg)
+			- sizeof(out_preamble) - EC_SPI_PAST_END_LENGTH;
+		spi_packet.response_size = 0;
 
-	/* Move to processing state */
-	priv->state = SPI_STATE_PROCESSING;
-	tx_status(EC_SPI_PROCESSING);
+		spi_packet.driver_result = EC_RES_SUCCESS;
 
-	host_packet_receive(&spi_packet);
-	return;
+		/* Move to processing state */
+		priv->state = SPI_STATE_PROCESSING;
+		tx_status(EC_SPI_PROCESSING);
+
+		host_packet_receive(&spi_packet);
+		return;
+	}
 
 spi_event_error:
 	/* Error, timeout, or protocol we can't handle.  Ignore data. */
 	tx_status(EC_SPI_RX_BAD_DATA);
 	priv->state = SPI_STATE_RX_BAD;
-#endif
-}
-
-void cros_ec_rx_dma_irq(void)
-{
-#ifdef CROS_IRQ_DEBUG
-        IO_t led3 = IOGetByTag(IO_TAG(PC2));
-	IOInit(led3, OWNER_FREE, 0);
-	IOConfigGPIO(led3, IO_CONFIG(GPIO_Mode_Out_PP, GPIO_Speed_50MHz));
-	IOHi(led3);
-#endif
 }
 
 static void cros_ec_reinit(void)
@@ -462,9 +398,6 @@ static void cros_ec_reinit(void)
 	/* Reset the SPI Peripheral to clear any existing weird states. */
 	priv->state = SPI_STATE_DISABLED;
 	SPI_I2S_DeInit(CROS_EC_SPI_INSTANCE);
-
-	/* 40 MHz pin speed */
-//	STM32_GPIO_OSPEEDR(GPIO_A) |= 0xff00;
 
 	/* Enable clocks to SPI1 module */
 	RCC_ClockCmd(RCC_APB2(SPI1), ENABLE);
@@ -492,13 +425,6 @@ static void cros_ec_reinit(void)
 
 	/* Set up for next transaction */
 	cros_ec_setup_transaction();
-
-#ifdef CROS_IRQ_DEBUG
-        IO_t led1 = IOGetByTag(IO_TAG(PC0));
-	IOInit(led1, OWNER_FREE, 0);
-	IOConfigGPIO(led1, IO_CONFIG(GPIO_Mode_Out_PP, GPIO_Speed_50MHz));
-	IOHi(led1);
-#endif
 }
 
 bool cros_ec_init(void)
@@ -520,17 +446,39 @@ bool cros_ec_init(void)
 	IOConfigGPIO(priv->spi_miso, IO_CONFIG(GPIO_Mode_AF_PP, GPIO_Speed_50MHz));
 	IOConfigGPIO(priv->spi_mosi, IO_CONFIG(GPIO_Mode_IPU, GPIO_Speed_50MHz));
 
+	/* Configure RX DMA channel */
+	DMA_StructInit(&priv->dma_rx_cfg);
+	priv->dma_rx_cfg.DMA_PeripheralBaseAddr = CROS_EC_SPI_INSTANCE->DR;
+	priv->dma_rx_cfg.DMA_MemoryBaseAddr = (uint32_t)priv->in_msg;
+	priv->dma_rx_cfg.DMA_Priority = DMA_Priority_VeryHigh;
+	priv->dma_rx_cfg.DMA_MemoryInc = DMA_MemoryInc_Enable;
+	priv->dma_rx_cfg.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+	priv->dma_rx_cfg.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+	DMA_DeInit(CROS_EC_SPI_DMA_CH_RX);
+	DMA_Init(CROS_EC_SPI_DMA_CH_RX, &priv->dma_rx_cfg);
+	DMA_ITConfig(CROS_EC_SPI_DMA_CH_RX, DMA_IT_TC, ENABLE);
+
+	/* Configure TX DMA channel */
+	DMA_DeInit(CROS_EC_SPI_DMA_CH_TX);
+	DMA_StructInit(&priv->dma_tx_cfg);
+	priv->dma_tx_cfg.DMA_PeripheralBaseAddr = CROS_EC_SPI_INSTANCE->DR;
+	priv->dma_tx_cfg.DMA_MemoryBaseAddr = (uint32_t)priv->out_msg;
+	priv->dma_tx_cfg.DMA_DIR = DMA_DIR_PeripheralDST;
+	priv->dma_tx_cfg.DMA_Priority = DMA_Priority_High;
+	priv->dma_tx_cfg.DMA_MemoryInc = DMA_MemoryInc_Enable;
+	priv->dma_tx_cfg.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+	priv->dma_tx_cfg.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+	DMA_DeInit(CROS_EC_SPI_DMA_CH_TX);
+	DMA_Init(CROS_EC_SPI_DMA_CH_TX, &priv->dma_tx_cfg);
+
 	/* Setup the nss irq */
 	EXTIHandlerInit(&priv->exti_nss, &cros_ec_nss_irq);
 	EXTIConfig(priv->spi_nss, &priv->exti_nss, NVIC_BUILD_PRIORITY(1, 0),
 		EXTI_Trigger_Rising_Falling);
 
 	/* Setup the rx dma irq */
-	priv->nvic_rx_dma.NVIC_IRQChannel = DMA1_Channel2_IRQn;
-	priv->nvic_rx_dma.NVIC_IRQChannelPreemptionPriority = 1;
-	priv->nvic_rx_dma.NVIC_IRQChannelSubPriority = 0;
-//	priv->nvic_rx_dma.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_Init(&priv->nvic_rx_dma);
+	dmaInit(DMA1_CH2_HANDLER, OWNER_CROS_EC, 0);
+	dmaSetHandler(DMA1_CH2_HANDLER, cros_ec_rx_dma_irq, NVIC_BUILD_PRIORITY(1, 0), NULL);
 
 	cros_ec_reinit();
 	return true;
