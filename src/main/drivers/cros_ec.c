@@ -48,6 +48,8 @@
 #define CROS_EC_SPI_DMA_CH_TX		DMA1_Channel3
 #endif
 
+#define DMA1_Channel2_IRQHandler	cros_ec_rx_dma_irq
+
 //#define CROS_IRQ_DEBUG
 
 /*
@@ -91,20 +93,7 @@ static const uint8_t out_preamble[4] = {
  */
 #define EC_SPI_PAST_END_LENGTH 1
 
-/*
- * Our input and output buffers. These must be large enough for our largest
- * message, including protocol overhead, and must be 32-bit aligned.
- */
-static uint8_t out_msg[SPI_MAX_RESPONSE_SIZE + sizeof(out_preamble) +
-	EC_SPI_PAST_END_LENGTH] __aligned(4);
-static uint8_t in_msg[SPI_MAX_REQUEST_SIZE] __aligned(4);
 static struct host_packet spi_packet;
-
-/*
- * This is set if SPI NSS raises to high while EC is still processing a
- * command.
- */
-static int setup_transaction_later;
 
 enum spi_state {
 	/* SPI not enabled (initial state, and when chipset is off) */
@@ -131,7 +120,28 @@ enum spi_state {
 	 * data.
 	 */
 	SPI_STATE_RX_BAD,
-} state;
+};
+
+static struct cros_ec_spi_priv {
+	// Flags
+	enum spi_state state;
+	int setup_transaction_later;
+
+	// Buffers
+	uint8_t in_msg[SPI_MAX_REQUEST_SIZE] __aligned(4);
+	uint8_t out_msg[SPI_MAX_RESPONSE_SIZE + sizeof(out_preamble) +
+		EC_SPI_PAST_END_LENGTH] __aligned(4);
+
+	// IRQs
+	NVIC_InitTypeDef nvic_rx_dma;
+	extiCallbackRec_t exti_nss;
+
+	// IOs
+	IO_t spi_nss;
+	IO_t spi_miso;
+	IO_t spi_mosi;
+	IO_t spi_sck;
+} cros_spi_priv;
 
 static void cros_ec_reinit(void);
 
@@ -221,14 +231,16 @@ void cros_ec_dma_prep_tx(unsigned count, void *memory)
  */
 static int cros_ec_wait_for_bytes(uint32_t needed)
 {
+	struct cros_ec_spi_priv *priv = &cros_spi_priv;
+
 	int done;
 	uint32_t start = millis();
 
 	while (1) {
 		done = DMA_GetCurrDataCounter(CROS_EC_SPI_DMA_CH_RX);
-		if ((sizeof(in_msg) - done) >= needed)
+		if ((sizeof(priv->in_msg) - done) >= needed)
 			return 0;
-		if (IORead(IOGetByTag(IO_TAG(SPI1_NSS_PIN))))
+		if (IORead(priv->spi_nss))
 			return -1;
 		if (millis() - start > SPI_CMD_RX_TIMEOUT_MS)
 			return -1;
@@ -241,7 +253,9 @@ static int cros_ec_wait_for_bytes(uint32_t needed)
  */
 static void cros_ec_check_setup_transaction_later(void)
 {
-	if (setup_transaction_later) {
+	struct cros_ec_spi_priv *priv = &cros_spi_priv;
+
+	if (priv->setup_transaction_later) {
 		cros_ec_reinit(); /* Fix for bug chrome-os-partner:31390 */
 		/*
 		 * 'state' is set to SPI_STATE_READY_TO_RX. Somehow AP
@@ -260,11 +274,13 @@ static void cros_ec_check_setup_transaction_later(void)
  */
 static void cros_ec_send_response_packet(struct host_packet *pkt)
 {
+	struct cros_ec_spi_priv *priv = &cros_spi_priv;
+
 	/*
 	 * If we're not processing, then the AP has already terminated the
 	 * transaction, and won't be listening for a response.
 	 */
-	if (state != SPI_STATE_PROCESSING)
+	if (priv->state != SPI_STATE_PROCESSING)
 		return;
 
 	/* state == SPI_STATE_PROCESSING */
@@ -274,13 +290,13 @@ static void cros_ec_send_response_packet(struct host_packet *pkt)
 
 	/* Transmit the reply */
 	cros_ec_dma_prep_tx(sizeof(out_preamble) + pkt->response_size
-		+ EC_SPI_PAST_END_LENGTH, out_msg);
+		+ EC_SPI_PAST_END_LENGTH, priv->out_msg);
 
 	/*
 	 * Before the state is set to SENDING, any CS de-assertion would
 	 * set setup_transaction_later to 1.
 	 */
-	state = SPI_STATE_SENDING;
+	priv->state = SPI_STATE_SENDING;
 	cros_ec_check_setup_transaction_later();
 }
 
@@ -292,16 +308,17 @@ static void cros_ec_send_response_packet(struct host_packet *pkt)
  */
 static void cros_ec_setup_transaction(void)
 {
+	struct cros_ec_spi_priv *priv = &cros_spi_priv;
 	volatile uint8_t dummy __attribute__((unused));
 
 	/* clear this as soon as possible */
-	setup_transaction_later = 0;
+	priv->setup_transaction_later = 0;
 
 	/* Not ready to receive yet */
 	tx_status(EC_SPI_NOT_READY);
 
 	/* We are no longer actively processing a transaction */
-	state = SPI_STATE_PREPARE_RX;
+	priv->state = SPI_STATE_PREPARE_RX;
 
 	/* Stop sending response, if any */
 	cros_ec_dma_disable_tx();
@@ -313,40 +330,41 @@ static void cros_ec_setup_transaction(void)
 	dummy = SPI_I2S_ReceiveData(CROS_EC_SPI_INSTANCE);
 
 	/* Start DMA */
-	cros_ec_dma_start_rx(sizeof(in_msg), in_msg);
+	cros_ec_dma_start_rx(sizeof(priv->in_msg), priv->in_msg);
 
 	/* Ready to receive */
-	state = SPI_STATE_READY_TO_RX;
+	priv->state = SPI_STATE_READY_TO_RX;
 	tx_status(EC_SPI_OLD_READY);
 }
 
 //#define CROS_IRQ_DEBUG
-static void cros_ec_exti_handler(extiCallbackRec_t *cb)
+static void cros_ec_nss_irq(extiCallbackRec_t *cb)
 {
-	struct ec_host_request *r = (struct ec_host_request *)in_msg;
+	struct cros_ec_spi_priv *priv = &cros_spi_priv;
+	struct ec_host_request *r = (struct ec_host_request *)priv->in_msg;
 	uint32_t pkt_size;
 
 	UNUSED(cb);
 
 	/* If not enabled, ignore glitches on NSS */
-	if (state == SPI_STATE_DISABLED)
+	if (priv->state == SPI_STATE_DISABLED)
 		return;
 
 #ifdef CROS_IRQ_DEBUG
-	if (IORead(IOGetByTag(IO_TAG(SPI1_NSS_PIN))))
+	if (IORead(priv->spi_nss))
 		IOHi(DEFIO_IO(PC0));
 	else
 		IOLo(DEFIO_IO(PC0));
 	return;
 #else
 	/* Check chip select.  If it's high, the AP ended a transaction. */
-	if (IORead(IOGetByTag(IO_TAG(SPI1_NSS_PIN)))) {
+	if (IORead(priv->spi_nss)) {
 		/*
 		 * If the buffer is still used by the host command, postpone
 		 * the DMA rx setup.
 		 */
-		if (state == SPI_STATE_PROCESSING) {
-			setup_transaction_later = 1;
+		if (priv->state == SPI_STATE_PROCESSING) {
+			priv->setup_transaction_later = 1;
 			return;
 		}
 
@@ -357,25 +375,25 @@ static void cros_ec_exti_handler(extiCallbackRec_t *cb)
 	}
 
 	/* Chip select is low = asserted */
-	if (state != SPI_STATE_READY_TO_RX) {
+	if (priv->state != SPI_STATE_READY_TO_RX) {
 		/*
 		 * AP started a transaction but we weren't ready for it.
 		 * Tell AP we weren't ready, and ignore the received data.
 		 */
 		tx_status(EC_SPI_NOT_READY);
-		state = SPI_STATE_RX_BAD;
+		priv->state = SPI_STATE_RX_BAD;
 		return;
 	}
 
 	/* We're now inside a transaction */
-	state = SPI_STATE_RECEIVING;
+	priv->state = SPI_STATE_RECEIVING;
 	tx_status(EC_SPI_RECEIVING);
 
 	/* Wait for version, command, length bytes */
 	if (cros_ec_wait_for_bytes(3))
 		goto spi_event_error;
 
-	if (in_msg[0] != EC_HOST_REQUEST_VERSION)
+	if (priv->in_msg[0] != EC_HOST_REQUEST_VERSION)
 		goto spi_event_error;
 
 	/* Wait for the rest of the command header */
@@ -388,7 +406,7 @@ static void cros_ec_exti_handler(extiCallbackRec_t *cb)
 	 * sending dummy data until we respond.
 	 */
 	pkt_size = host_request_expected_size(r);
-	if (pkt_size == 0 || pkt_size > sizeof(in_msg))
+	if (pkt_size == 0 || pkt_size > sizeof(priv->in_msg))
 		goto spi_event_error;
 
 	/* Wait for the packet data */
@@ -397,23 +415,23 @@ static void cros_ec_exti_handler(extiCallbackRec_t *cb)
 
 	spi_packet.send_response = cros_ec_send_response_packet;
 
-	spi_packet.request = in_msg;
+	spi_packet.request = priv->in_msg;
 	spi_packet.request_temp = NULL;
-	spi_packet.request_max = sizeof(in_msg);
+	spi_packet.request_max = sizeof(priv->in_msg);
 	spi_packet.request_size = pkt_size;
 
 	/* Response must start with the preamble */
-	memcpy(out_msg, out_preamble, sizeof(out_preamble));
-	spi_packet.response = out_msg + sizeof(out_preamble);
+	memcpy(priv->out_msg, out_preamble, sizeof(out_preamble));
+	spi_packet.response = priv->out_msg + sizeof(out_preamble);
 	/* Reserve space for the preamble and trailing past-end byte */
-	spi_packet.response_max = sizeof(out_msg)
+	spi_packet.response_max = sizeof(priv->out_msg)
 		- sizeof(out_preamble) - EC_SPI_PAST_END_LENGTH;
 	spi_packet.response_size = 0;
 
 	spi_packet.driver_result = EC_RES_SUCCESS;
 
 	/* Move to processing state */
-	state = SPI_STATE_PROCESSING;
+	priv->state = SPI_STATE_PROCESSING;
 	tx_status(EC_SPI_PROCESSING);
 
 	host_packet_receive(&spi_packet);
@@ -422,16 +440,27 @@ static void cros_ec_exti_handler(extiCallbackRec_t *cb)
 spi_event_error:
 	/* Error, timeout, or protocol we can't handle.  Ignore data. */
 	tx_status(EC_SPI_RX_BAD_DATA);
-	state = SPI_STATE_RX_BAD;
+	priv->state = SPI_STATE_RX_BAD;
+#endif
+}
+
+void cros_ec_rx_dma_irq(void)
+{
+#ifdef CROS_IRQ_DEBUG
+        IO_t led3 = IOGetByTag(IO_TAG(PC2));
+	IOInit(led3, OWNER_FREE, 0);
+	IOConfigGPIO(led3, IO_CONFIG(GPIO_Mode_Out_PP, GPIO_Speed_50MHz));
+	IOHi(led3);
 #endif
 }
 
 static void cros_ec_reinit(void)
 {
+	struct cros_ec_spi_priv *priv = &cros_spi_priv;
 	volatile uint32_t dummy __attribute__((unused));
 
 	/* Reset the SPI Peripheral to clear any existing weird states. */
-	state = SPI_STATE_DISABLED;
+	priv->state = SPI_STATE_DISABLED;
 	SPI_I2S_DeInit(CROS_EC_SPI_INSTANCE);
 
 	/* 40 MHz pin speed */
@@ -459,45 +488,49 @@ static void cros_ec_reinit(void)
 	SPI_Cmd(CROS_EC_SPI_INSTANCE, ENABLE);
 
 	/* Enable interrupts on NSS */
-	EXTIEnable(IOGetByTag(IO_TAG(SPI1_NSS_PIN)), true);
+	EXTIEnable(priv->spi_nss, true);
 
 	/* Set up for next transaction */
 	cros_ec_setup_transaction();
+
+#ifdef CROS_IRQ_DEBUG
+        IO_t led1 = IOGetByTag(IO_TAG(PC0));
+	IOInit(led1, OWNER_FREE, 0);
+	IOConfigGPIO(led1, IO_CONFIG(GPIO_Mode_Out_PP, GPIO_Speed_50MHz));
+	IOHi(led1);
+#endif
 }
 
 bool cros_ec_init(void)
 {
-	static extiCallbackRec_t exti;
-	IO_t spi_nss = IOGetByTag(IO_TAG(SPI1_NSS_PIN));
-	IO_t spi_sck = IOGetByTag(IO_TAG(SPI1_SCK_PIN));
-	IO_t spi_miso = IOGetByTag(IO_TAG(SPI1_MISO_PIN));
-	IO_t spi_mosi = IOGetByTag(IO_TAG(SPI1_MOSI_PIN));
+	struct cros_ec_spi_priv *priv = &cros_spi_priv;
 
 	// This driver only works on SPI1
 	if (CROS_EC_SPI_INSTANCE != SPI1)
 		return false;
 
-#ifdef CROS_IRQ_DEBUG
-        IO_t led1 = IOGetByTag(IO_TAG(PC0));
-        IO_t led2 = IOGetByTag(IO_TAG(PC1));
-
-	IOInit(led1, OWNER_FREE, 0);
-	IOConfigGPIO(led1, IO_CONFIG(GPIO_Mode_Out_PP, GPIO_Speed_50MHz));
-
-	IOInit(led2, OWNER_FREE, 0);
-	IOConfigGPIO(led2, IO_CONFIG(GPIO_Mode_Out_PP, GPIO_Speed_50MHz));
-	IOHi(led2);
-#endif
+	priv->spi_nss = IOGetByTag(IO_TAG(SPI1_NSS_PIN));
+	priv->spi_sck = IOGetByTag(IO_TAG(SPI1_SCK_PIN));
+	priv->spi_miso = IOGetByTag(IO_TAG(SPI1_MISO_PIN));
+	priv->spi_mosi = IOGetByTag(IO_TAG(SPI1_MOSI_PIN));
 
 	/* Set SPI pins to alternate function */
-	IOConfigGPIO(spi_nss, IO_CONFIG(GPIO_Mode_IPU, GPIO_Speed_50MHz));
-	IOConfigGPIO(spi_sck, IO_CONFIG(GPIO_Mode_IN_FLOATING, GPIO_Speed_50MHz));
-	IOConfigGPIO(spi_miso, IO_CONFIG(GPIO_Mode_AF_PP, GPIO_Speed_50MHz));
-	IOConfigGPIO(spi_mosi, IO_CONFIG(GPIO_Mode_IPU, GPIO_Speed_50MHz));
+	IOConfigGPIO(priv->spi_nss, IO_CONFIG(GPIO_Mode_IPU, GPIO_Speed_50MHz));
+	IOConfigGPIO(priv->spi_sck, IO_CONFIG(GPIO_Mode_IN_FLOATING, GPIO_Speed_50MHz));
+	IOConfigGPIO(priv->spi_miso, IO_CONFIG(GPIO_Mode_AF_PP, GPIO_Speed_50MHz));
+	IOConfigGPIO(priv->spi_mosi, IO_CONFIG(GPIO_Mode_IPU, GPIO_Speed_50MHz));
 
-	EXTIHandlerInit(&exti, &cros_ec_exti_handler);
-	EXTIConfig(spi_nss, &exti, NVIC_BUILD_PRIORITY(1, 0),
+	/* Setup the nss irq */
+	EXTIHandlerInit(&priv->exti_nss, &cros_ec_nss_irq);
+	EXTIConfig(priv->spi_nss, &priv->exti_nss, NVIC_BUILD_PRIORITY(1, 0),
 		EXTI_Trigger_Rising_Falling);
+
+	/* Setup the rx dma irq */
+	priv->nvic_rx_dma.NVIC_IRQChannel = DMA1_Channel2_IRQn;
+	priv->nvic_rx_dma.NVIC_IRQChannelPreemptionPriority = 1;
+	priv->nvic_rx_dma.NVIC_IRQChannelSubPriority = 0;
+//	priv->nvic_rx_dma.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&priv->nvic_rx_dma);
 
 	cros_ec_reinit();
 	return true;
