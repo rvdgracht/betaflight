@@ -80,6 +80,9 @@ typedef enum {
 #ifdef USE_DASHBOARD
     TASK_DASHBOARD,
 #endif
+#ifdef USE_CROS_EC
+    TASK_CROS_EC,
+#endif
 #ifdef TELEMETRY
     TASK_TELEMETRY,
 #endif

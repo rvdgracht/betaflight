@@ -33,6 +33,8 @@
 #include "config/parameter_group.h"
 #include "config/parameter_group_ids.h"
 
+#include "cros/host_command.h"
+
 #include "drivers/sensor.h"
 #include "drivers/accgyro.h"
 #include "drivers/compass.h"
@@ -260,6 +262,9 @@ void fcTasksInit(void)
 #ifdef USE_DASHBOARD
     setTaskEnabled(TASK_DASHBOARD, feature(FEATURE_DASHBOARD));
 #endif
+#ifdef USE_CROS_EC
+    setTaskEnabled(TASK_CROS_EC, true);
+#endif
 #ifdef TELEMETRY
     setTaskEnabled(TASK_TELEMETRY, feature(FEATURE_TELEMETRY));
     if (feature(FEATURE_TELEMETRY)) {
@@ -449,6 +454,16 @@ cfTask_t cfTasks[TASK_COUNT] = {
         .staticPriority = TASK_PRIORITY_LOW,
     },
 #endif
+#ifdef USE_CROS_EC
+    [TASK_CROS_EC] = {
+        .taskName = "CROS_EC",
+        .checkFunc = host_command_update,
+        .taskFunc = host_task_handler,
+        .desiredPeriod = TASK_PERIOD_HZ(20),
+        .staticPriority = TASK_PRIORITY_HIGH,
+    },
+#endif
+
 #ifdef OSD
     [TASK_OSD] = {
         .taskName = "OSD",

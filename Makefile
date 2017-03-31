@@ -98,7 +98,7 @@ include $(ROOT)/make/tools.mk
 # default xtal value for F4 targets
 HSE_VALUE       ?= 8000000
 
-# used for turning on features like VCP and SDCARD
+# used for turning on features like VCP, SDCARD and CROS_EC
 FEATURES        =
 
 OFFICIAL_TARGETS  = ALIENFLIGHTF3 ALIENFLIGHTF4 ANYFCF7 BETAFLIGHTF3 BLUEJAYF4 CC3D FURYF4 NAZE REVO SIRINFPV SPARKY SPRACINGF3 SPRACINGF3EVO SPRACINGF3NEO STM32F3DISCOVERY
@@ -303,6 +303,11 @@ INCLUDE_DIRS    := $(INCLUDE_DIRS) \
                    $(FATFS_DIR) \
 
 VPATH           := $(VPATH):$(FATFS_DIR)
+endif
+
+ifneq ($(filter CROS_EC, $(FEATURES)),)
+INCLUDE_DIRS    := $(INCLUDE_DIRS) \
+                   $(ROOT)/src/main/cros
 endif
 
 LD_SCRIPT       = $(LINKER_DIR)/stm32_flash_f303_$(FLASH_SIZE)k.ld
@@ -892,6 +897,10 @@ VCP_SRC = \
             vcp/usb_pwr.c \
             drivers/serial_usb_vcp.c \
             drivers/usb_io.c
+
+CROS_EC_SRC = \
+            drivers/cros_ec.c \
+            cros/host_command.c
 endif
 
 STM32F10x_COMMON_SRC = \
@@ -1006,6 +1015,11 @@ endif
 ifneq ($(filter VCP,$(FEATURES)),)
 SRC += $(VCP_SRC)
 endif
+
+ifneq ($(filter CROS_EC,$(FEATURES)),)
+SRC += $(CROS_EC_SRC)
+endif
+
 # end target specific make file checks
 
 

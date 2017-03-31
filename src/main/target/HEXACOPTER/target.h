@@ -63,8 +63,8 @@
 #define USE_SPI
 #define USE_SPI_DEVICE_1
 
-#define USE_RX_SPI_SLAVE
-#define RX_SPI_INSTANCE         SPI1
+#define USE_CROS_EC
+#define CROS_EC_SPI_INSTANCE	SPI1
 
 //#define RX_IRQ_PIN		PA8
 #define SPI1_NSS_PIN		PA15
@@ -72,7 +72,8 @@
 #define SPI1_MISO_PIN           PB4
 #define SPI1_MOSI_PIN           PB5
 
-#define DEFAULT_RX_FEATURE      FEATURE_RX_SPI
+
+#define DEFAULT_RX_FEATURE      FEATURE_RX_SPI_CROS
 
 #if 0	// SPI
 

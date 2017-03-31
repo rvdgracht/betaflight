@@ -1,6 +1,6 @@
 F1_TARGETS += $(TARGET)
 FLASH_SIZE = 128
-FEATURES = ONBOARDFLASH
+FEATURES = CROS_EC
 
 TARGET_SRC = \
 	drivers/accgyro_mpu.c           \

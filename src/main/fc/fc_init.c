@@ -64,6 +64,7 @@
 #include "drivers/transponder_ir.h"
 #include "drivers/exti.h"
 #include "drivers/vtx_soft_spi_rtc6705.h"
+#include "drivers/cros_ec.h"
 
 #include "fc/config.h"
 #include "fc/fc_init.h"
@@ -318,7 +319,11 @@ void init(void)
 
 #ifdef USE_SPI
 #ifdef USE_SPI_DEVICE_1
+#ifdef USE_CROS_EC
+    cros_ec_init();
+#else
     spiInit(SPIDEV_1);
+#endif
 #endif
 #ifdef USE_SPI_DEVICE_2
     spiInit(SPIDEV_2);
