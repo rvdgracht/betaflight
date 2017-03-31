@@ -50,6 +50,11 @@ SECTIONS
     KEEP (*(.fini))
 
     . = ALIGN(4);
+    __hcmds = .;
+    KEEP(*(SORT(.rodata.hcmds*)))
+    __hcmds_end = .;
+
+    . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
   } >FLASH
 

@@ -277,35 +277,39 @@ host_packet_end:
 	host_command_received(&args0);
 }
 
+extern const struct host_command __hcmds[];
+extern const struct host_command __hcmds_end[];
+
 /**
  * Find a command by command number.
  *
  * @param command	Command number to find
  * @return The command structure, or NULL if no match found.
  */
-
 static const struct host_command *find_host_command(int command)
 {
-#if 0
-	const struct host_command *cmd;
+	const struct host_command *l, *r, *m;
+	uint32_t num;
 
-	for (cmd = __hcmds; cmd < __hcmds_end; cmd++) {
-		if (command == cmd->command)
-			return cmd;
+/* Use binary search to locate host command handler */
+	l = __hcmds;
+	r = __hcmds_end - 1;
+
+	while (1) {
+		if (l > r)
+			return NULL;
+
+		num = r - l;
+		m = l + (num / 2);
+
+		if (m->command < command)
+			l = m + 1;
+		else if (m->command > command)
+			r = m - 1;
+		else
+			return m;
 	}
-#else
-	UNUSED(command);
-#endif
-	return NULL;
 }
-
-#if 0
-void host_command_init(void)
-{
-	register task and its handler
-}
-
-#endif
 
 bool host_command_update(timeUs_t currentTimeUs,
 	timeDelta_t currentDeltaTimeUs)

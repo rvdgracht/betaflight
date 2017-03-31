@@ -100,6 +100,10 @@
 #define __ec_align2 __packed __aligned(2)
 #define __ec_align4 __packed __aligned(4)
 
+#ifndef __keep
+#define __keep __attribute__((used)) __attribute__((externally_visible))
+#endif
+
 /* Host command response codes */
 enum ec_status {
 	EC_RES_SUCCESS = 0,
@@ -335,13 +339,11 @@ struct __ec_align4 ec_response_get_features {
  */
 #define EC_CMD_REBOOT 0x00D1  /* Think "die" */
 
-
 /*
- * Check EC communications status (busy). This is needed on i2c/spi but not
- * on lpc since it has its own out-of-band busy indicator.
+ * Resend last response (not supported on LPC).
  *
- * lpc must read the status from the command register. Attempting this on
- * lpc will overwrite the args/parameter space and corrupt its data.
+ * Returns EC_RES_UNAVAILABLE if there is no response available - for example,
+ * there was no previous command, or the previous command's response was too
+ * big to save.
  */
-#define EC_CMD_GET_COMMS_STATUS		0x0009
-
+#define EC_CMD_RESEND_RESPONSE 0x00DB

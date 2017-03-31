@@ -170,10 +170,10 @@ bool host_command_update(timeUs_t currentTimeUs,
 	timeDelta_t currentDeltaTimeUs);
 void host_task_handler(timeUs_t currentTimeUs);
 
+#define HC_EXP(off, cmd) __host_cmd_##off##cmd
+#define HC_EXP_STR(off, cmd) "__host_cmd_"#off#cmd
 
 #define DECLARE_HOST_COMMAND(command, routine, version_mask)    \
-	int (routine)(struct host_cmd_handler_args *args)       \
-		__attribute__((unused))
-
-#define DECLARE_PRIVATE_HOST_COMMAND(command, routine, version_mask)	\
-	DECLARE_HOST_COMMAND(command, routine, version_mask)
+	const struct host_command __keep HC_EXP(0x0000, command)        \
+	__attribute__((section(".rodata.hcmds."HC_EXP_STR(0x0000, command)))) \
+		= {routine, command, version_mask}
