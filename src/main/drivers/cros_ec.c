@@ -42,6 +42,8 @@
 #include "rcc.h"
 #include "system.h"
 
+#include "hex_leds.h"
+
 #ifndef CROS_EC_SPI_DMA_CH_RX
 #define CROS_EC_SPI_DMA_CH_RX		DMA1_Channel2
 #endif
@@ -338,6 +340,8 @@ static void cros_ec_nss_irq(extiCallbackRec_t *cb)
 	/* We're now inside a transaction */
 	priv->state = SPI_STATE_RECEIVING_HDR;
 	tx_status(EC_SPI_RECEIVING);
+
+	HEX_LED2_ON;
 }
 
 void cros_ec_rx_dma_irq(struct dmaChannelDescriptor_s *cd)
@@ -355,6 +359,7 @@ void cros_ec_rx_dma_irq(struct dmaChannelDescriptor_s *cd)
 		cros_ec_dma_start_rx(r->data_len, sizeof(*r));
 
 		priv->state = SPI_STATE_RECEIVING_PAY;
+		HEX_LED3_ON;
 		return;
 
 	} else if (priv->state == SPI_STATE_RECEIVING_PAY) {
@@ -381,6 +386,7 @@ void cros_ec_rx_dma_irq(struct dmaChannelDescriptor_s *cd)
 		tx_status(EC_SPI_PROCESSING);
 
 		host_packet_receive(&spi_packet);
+		HEX_LED4_ON;
 		return;
 	}
 
@@ -425,6 +431,8 @@ static void cros_ec_reinit(void)
 
 	/* Set up for next transaction */
 	cros_ec_setup_transaction();
+
+	HEX_LED1_ON;
 }
 
 bool cros_ec_init(void)

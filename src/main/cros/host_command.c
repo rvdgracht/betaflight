@@ -286,6 +286,7 @@ extern const struct host_command __hcmds_end[];
  * @param command	Command number to find
  * @return The command structure, or NULL if no match found.
  */
+#include "hex_leds.h"
 static const struct host_command *find_host_command(int command)
 {
 	const struct host_command *l, *r, *m;
@@ -306,8 +307,10 @@ static const struct host_command *find_host_command(int command)
 			l = m + 1;
 		else if (m->command > command)
 			r = m - 1;
-		else
+		else {
+			HEX_LED5_ON;
 			return m;
+		}
 	}
 }
 
