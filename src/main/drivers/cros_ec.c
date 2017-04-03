@@ -349,7 +349,7 @@ void cros_ec_rx_dma_irq(struct dmaChannelDescriptor_s *cd)
 	struct cros_ec_spi_priv *priv = &cros_spi_priv;
 	struct ec_host_request *r = (struct ec_host_request *)priv->in_msg;
 
-	UNUSED(cd);
+	DMA_CLEAR_FLAG(cd, DMA_IT_TCIF);
 
 	if (priv->state == SPI_STATE_RECEIVING_HDR) {
 		if (r->struct_version != EC_HOST_REQUEST_VERSION)
