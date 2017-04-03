@@ -48,10 +48,6 @@
 #define CROS_EC_SPI_DMA_CH_RX		DMA1_Channel2
 #endif
 
-#ifndef CROS_EC_SPI_DMA_CH_RX_IRQN
-#define CROS_EC_SPI_DMA_CH_RX_IRQN	DMA1_Channel2_IRQn
-#endif
-
 #ifndef CROS_EC_SPI_DMA_CH_TX
 #define CROS_EC_SPI_DMA_CH_TX		DMA1_Channel3
 #endif
@@ -180,9 +176,10 @@ void cros_ec_dma_start_rx(uint16_t count, uint32_t offset)
 
 	/* Disable the DMA channel */
 	DMA_Cmd(CROS_EC_SPI_DMA_CH_RX, DISABLE);
+	while (CROS_EC_SPI_DMA_CH_RX->CCR & 0x1);
 
 	/* Set bytes to receive */
-	DMA_SetCurrDataCounter(CROS_EC_SPI_DMA_CH_RX, count);
+	CROS_EC_SPI_DMA_CH_RX->CNDTR = count;
 
 	/* Set position in the receive buffer */
 	CROS_EC_SPI_DMA_CH_RX->CMAR = (uint32_t)(priv->in_msg + offset);
@@ -401,30 +398,14 @@ static void cros_ec_reinit(void)
 	struct cros_ec_spi_priv *priv = &cros_spi_priv;
 	volatile uint32_t dummy __attribute__((unused));
 
-	/* Reset the SPI Peripheral to clear any existing weird states. */
-	priv->state = SPI_STATE_DISABLED;
-	SPI_I2S_DeInit(CROS_EC_SPI_INSTANCE);
-
 	/* Enable clocks to SPI1 module */
 	RCC_ClockCmd(RCC_APB2(SPI1), ENABLE);
 
-	/* Delay 1 APB clock cycle after the clock is enabled */
-	dummy = DMA1->ISR;
-
-	/* Re-initialize SPI */
-	SPI_InitTypeDef spiInit;
-	SPI_StructInit(&spiInit);
-	SPI_Init(CROS_EC_SPI_INSTANCE, &spiInit);
-
-	/* Disable hardware crc checking */
-	SPI_CalculateCRC(CROS_EC_SPI_INSTANCE, DISABLE);
-
 	/* Enable rx/tx DMA and get ready to receive our first transaction. */
-	SPI_I2S_DMACmd(CROS_EC_SPI_INSTANCE,
-		SPI_I2S_DMAReq_Tx | SPI_I2S_DMAReq_Rx, ENABLE);
+	SPI1->CR2 = SPI_I2S_DMAReq_Tx | SPI_I2S_DMAReq_Rx;
 
 	/* Enable the SPI peripheral */
-	SPI_Cmd(CROS_EC_SPI_INSTANCE, ENABLE);
+	SPI1->CR1 |= (1 << 6);
 
 	/* Enable interrupts on NSS */
 	EXTIEnable(priv->spi_nss, true);
@@ -449,12 +430,18 @@ bool cros_ec_init(void)
 	priv->spi_mosi = IOGetByTag(IO_TAG(SPI1_MOSI_PIN));
 
 	/* Set SPI pins to alternate function */
-	IOConfigGPIO(priv->spi_nss, IO_CONFIG(GPIO_Mode_IPU, GPIO_Speed_50MHz));
+	IOConfigGPIO(priv->spi_nss, IO_CONFIG(GPIO_Mode_IN_FLOATING, GPIO_Speed_50MHz));
 	IOConfigGPIO(priv->spi_sck, IO_CONFIG(GPIO_Mode_IN_FLOATING, GPIO_Speed_50MHz));
 	IOConfigGPIO(priv->spi_miso, IO_CONFIG(GPIO_Mode_AF_PP, GPIO_Speed_50MHz));
-	IOConfigGPIO(priv->spi_mosi, IO_CONFIG(GPIO_Mode_IPU, GPIO_Speed_50MHz));
+	IOConfigGPIO(priv->spi_mosi, IO_CONFIG(GPIO_Mode_IN_FLOATING, GPIO_Speed_50MHz));
+
+	priv->state = SPI_STATE_DISABLED;
+
+	/* Reset the SPI Peripheral */
+	SPI_I2S_DeInit(SPI1);
 
 	/* Configure RX DMA channel */
+	DMA_DeInit(CROS_EC_SPI_DMA_CH_RX);
 	DMA_StructInit(&priv->dma_rx_cfg);
 	priv->dma_rx_cfg.DMA_PeripheralBaseAddr = CROS_EC_SPI_INSTANCE->DR;
 	priv->dma_rx_cfg.DMA_MemoryBaseAddr = (uint32_t)priv->in_msg;
@@ -462,9 +449,7 @@ bool cros_ec_init(void)
 	priv->dma_rx_cfg.DMA_MemoryInc = DMA_MemoryInc_Enable;
 	priv->dma_rx_cfg.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
 	priv->dma_rx_cfg.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
-	DMA_DeInit(CROS_EC_SPI_DMA_CH_RX);
 	DMA_Init(CROS_EC_SPI_DMA_CH_RX, &priv->dma_rx_cfg);
-	DMA_ITConfig(CROS_EC_SPI_DMA_CH_RX, DMA_IT_TC, ENABLE);
 
 	/* Configure TX DMA channel */
 	DMA_DeInit(CROS_EC_SPI_DMA_CH_TX);
@@ -476,7 +461,6 @@ bool cros_ec_init(void)
 	priv->dma_tx_cfg.DMA_MemoryInc = DMA_MemoryInc_Enable;
 	priv->dma_tx_cfg.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
 	priv->dma_tx_cfg.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
-	DMA_DeInit(CROS_EC_SPI_DMA_CH_TX);
 	DMA_Init(CROS_EC_SPI_DMA_CH_TX, &priv->dma_tx_cfg);
 
 	/* Setup the nss irq */
@@ -487,6 +471,7 @@ bool cros_ec_init(void)
 	/* Setup the rx dma irq */
 	dmaInit(DMA1_CH2_HANDLER, OWNER_CROS_EC, 0);
 	dmaSetHandler(DMA1_CH2_HANDLER, cros_ec_rx_dma_irq, NVIC_BUILD_PRIORITY(1, 0), NULL);
+	DMA_ITConfig(DMA1_Channel2, DMA_IT_TC, ENABLE);
 
 	cros_ec_reinit();
 	return true;
