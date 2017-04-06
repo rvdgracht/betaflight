@@ -57,6 +57,8 @@
 
 #include "msp/msp_serial.h"
 
+#include "prt_ec/host_cmd.h"
+
 #include "rx/rx.h"
 
 #include "sensors/sensors.h"
@@ -263,6 +265,9 @@ void fcTasksInit(void)
 #ifdef USE_DASHBOARD
     setTaskEnabled(TASK_DASHBOARD, feature(FEATURE_DASHBOARD));
 #endif
+#if defined(USE_PRT_EC_SPI)
+    setTaskEnabled(TASK_PRT_EC, true);
+#endif
 #ifdef TELEMETRY
     setTaskEnabled(TASK_TELEMETRY, feature(FEATURE_TELEMETRY));
     if (feature(FEATURE_TELEMETRY)) {
@@ -435,6 +440,15 @@ cfTask_t cfTasks[TASK_COUNT] = {
         .taskFunc = dashboardUpdate,
         .desiredPeriod = TASK_PERIOD_HZ(10),
         .staticPriority = TASK_PRIORITY_LOW,
+    },
+#endif
+#if defined(USE_PRT_EC_SPI)
+    [TASK_PRT_EC] = {
+        .taskName = "PRT_EC",
+        .checkFunc = host_cmd_update,
+        .taskFunc = host_cmd_task_handler,
+        .desiredPeriod = TASK_PERIOD_HZ(20),
+        .staticPriority = TASK_PRIORITY_HIGH,
     },
 #endif
 #ifdef OSD

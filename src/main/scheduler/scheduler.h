@@ -78,6 +78,9 @@ typedef enum {
 #ifdef USE_DASHBOARD
     TASK_DASHBOARD,
 #endif
+#if defined(USE_PRT_EC_SPI)
+    TASK_PRT_EC,
+#endif
 #ifdef TELEMETRY
     TASK_TELEMETRY,
 #endif

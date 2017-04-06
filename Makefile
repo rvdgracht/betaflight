@@ -566,6 +566,7 @@ COMMON_SRC = \
             drivers/bus_i2c_soft.c \
             drivers/bus_spi.c \
             drivers/bus_spi_soft.c \
+            drivers/prt_ec_spi.c \
             drivers/display.c \
             drivers/exti.c \
             drivers/gyro_sync.c \
@@ -910,6 +911,12 @@ endif
 
 ifneq ($(filter VCP,$(FEATURES)),)
 TARGET_SRC += $(VCP_SRC)
+endif
+
+ifneq ($(filter PRT_EC,$(FEATURES)),)
+SRC += \
+            prt_ec/crc16.c \
+            prt_ec/host_cmd.c
 endif
 # end target specific make file checks
 

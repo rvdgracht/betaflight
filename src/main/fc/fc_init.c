@@ -58,6 +58,7 @@
 #include "drivers/transponder_ir.h"
 #include "drivers/exti.h"
 #include "drivers/vtx_soft_spi_rtc6705.h"
+#include "drivers/prt_ec_spi.h"
 
 #ifdef USE_BST
 #include "bus_bst.h"
@@ -321,7 +322,11 @@ void init(void)
 #else
     #ifdef USE_SPI
         #ifdef USE_SPI_DEVICE_1
-            spiInit(SPIDEV_1);
+            #ifdef USE_PRT_EC_SPI
+                prt_ec_spi_init();
+            #else
+                spiInit(SPIDEV_1);
+            #endif
         #endif
         #ifdef USE_SPI_DEVICE_2
             spiInit(SPIDEV_2);

@@ -61,6 +61,7 @@ typedef enum {
     OWNER_LED_STRIP,
     OWNER_TRANSPONDER,
     OWNER_VTX,
+    OWNER_PRT_EC,
     OWNER_TOTAL_COUNT
 } resourceOwner_e;
 
