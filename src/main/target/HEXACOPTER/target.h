@@ -71,6 +71,10 @@
 #define SPI1_MOSI_PIN           PB5
 
 #define USE_RX_MSP
+#define USE_RX_PRT_EC
+
+#define DEFAULT_RX_FEATURE      FEATURE_RX_PRT_EC
+
 #define DEFAULT_FEATURES	(FEATURE_FAILSAFE)
 
 // Just in case..

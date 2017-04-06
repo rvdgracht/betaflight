@@ -55,7 +55,7 @@
 #include "rx/jetiexbus.h"
 #include "rx/crsf.h"
 #include "rx/rx_spi.h"
-
+#include "rx/prt_ec.h"
 
 //#define DEBUG_RX_SIGNAL_LOSS
 
@@ -269,6 +269,13 @@ void rxInit(const rxConfig_t *rxConfig, const modeActivationCondition_t *modeAct
         rxPwmInit(rxConfig, &rxRuntimeConfig);
     }
 #endif
+
+#ifdef USE_RX_PRT_EC
+    if (feature(FEATURE_RX_PRT_EC)) {
+        prt_ec_rx_init(rxConfig, &rxRuntimeConfig);
+    }
+#endif
+
 }
 
 static uint8_t calculateChannelRemapping(const uint8_t *channelMap, uint8_t channelMapEntryCount, uint8_t channelToRemap)
