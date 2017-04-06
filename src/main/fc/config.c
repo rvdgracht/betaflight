@@ -856,8 +856,8 @@ void validateAndFixConfig(void)
         featureClear(FEATURE_RX_PARALLEL_PWM | FEATURE_RX_MSP | FEATURE_RX_PPM | FEATURE_RX_SPI);
     }
 
-    if (featureConfigured(FEATURE_RX_SPI)) {
-        featureClear(FEATURE_RX_SERIAL | FEATURE_RX_PARALLEL_PWM | FEATURE_RX_PPM | FEATURE_RX_MSP);
+    if (featureConfigured(FEATURE_RX_PRT_EC)) {
+        featureClear(FEATURE_RX_SERIAL | FEATURE_RX_PARALLEL_PWM | FEATURE_RX_MSP | FEATURE_RX_PPM | FEATURE_RX_SPI);
     }
 
     if (featureConfigured(FEATURE_RX_PARALLEL_PWM)) {
