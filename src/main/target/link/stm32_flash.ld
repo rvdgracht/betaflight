@@ -94,6 +94,12 @@ SECTIONS
     KEEP (*(.pg_resetdata))
     PROVIDE_HIDDEN (__pg_resetdata_end = .);
   } >FLASH
+  .hcmds :
+  {
+    __hcmds_start = .;
+    KEEP(*(SORT(.hcmds*)))
+    __hcmds_end = .;
+  } >FLASH
 
   /* used by the startup to initialize data */
   _sidata = .;
