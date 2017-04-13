@@ -91,7 +91,11 @@ void pgResetFn_motorConfig(motorConfig_t *motorConfig)
     {
         motorConfig->minthrottle = 1070;
         motorConfig->dev.motorPwmRate = BRUSHLESS_MOTORS_PWM_RATE;
+#ifdef HEXACOPTER
+	motorConfig->dev.motorPwmProtocol = PWM_TYPE_STANDARD;
+#else
         motorConfig->dev.motorPwmProtocol = PWM_TYPE_ONESHOT125;
+#endif
     }
 #endif
     motorConfig->maxthrottle = 2000;
