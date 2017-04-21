@@ -291,10 +291,7 @@ void init(void)
 
 #ifdef USE_SERVOS
     servoConfigureOutput();
-    if (isMixerUsingServos()) {
-        //pwm_params.useChannelForwarding = feature(FEATURE_CHANNEL_FORWARDING);
-        servoInit(servoConfig());
-    }
+    servoInit(servoConfig());
 #endif
 
 #if defined(USE_PWM) || defined(USE_PPM)
