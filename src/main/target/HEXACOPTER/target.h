@@ -62,7 +62,6 @@
 #define USE_SPI_DEVICE_1
 #define USE_PRT_EC_SPI
 
-//#define RX_IRQ_PIN		PA8
 #define SPI1_NSS_PIN		PA15
 #define SPI1_SCK_PIN            PB3
 #define SPI1_MISO_PIN           PB4
@@ -76,10 +75,6 @@
 #define DEFAULT_FEATURES	(FEATURE_FAILSAFE)
 
 // Just in case..
-#ifdef USE_RX_SPI
-# undef USE_RX_SPI
-#endif
-
 #ifdef USE_PWM
 # undef USE_PWM
 #endif
@@ -106,5 +101,6 @@
 #define TARGET_IO_PORTC		0x03ff
 #define TARGET_IO_PORTD		0x0004
 
-#define USABLE_TIMER_CHANNEL_COUNT 6
-#define USED_TIMERS             (TIM_N(1) | TIM_N(3) | TIM_N(4) | TIM_N(5) | TIM_N(8))
+#define USABLE_TIMER_CHANNEL_COUNT	10
+
+#define USED_TIMERS	(TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(4) | TIM_N(8))
