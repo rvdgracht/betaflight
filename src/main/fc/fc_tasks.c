@@ -57,7 +57,7 @@
 
 #include "msp/msp_serial.h"
 
-#include "prt_ec/host_cmd.h"
+#include "prt_ec/cmd.h"
 
 #include "rx/rx.h"
 

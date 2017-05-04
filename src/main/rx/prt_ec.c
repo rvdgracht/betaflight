@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "rx/rx.h"
-#include "prt_ec/host_cmd.h"
+#include "prt_ec/cmd.h"
 
 #if defined(USE_RX_PRT_EC) && defined(USE_PRT_EC_SPI)
 
