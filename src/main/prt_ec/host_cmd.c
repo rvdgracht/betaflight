@@ -4,7 +4,7 @@
 
 #include "prt_ec/crc16.h"
 
-#include "host_cmd.h"
+#include "cmd.h"
 
 enum host_cmd_state {
 	HOST_CMD_READY = 0,

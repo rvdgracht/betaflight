@@ -27,8 +27,6 @@
 #include "config/feature.h"
 #include "fc/config.h"
 
-#include "prt_ec/host_cmd.h"
-
 #include "dma.h"
 #include "io.h"
 #include "io_impl.h"
@@ -36,6 +34,7 @@
 #include "rcc.h"
 #include "system.h"
 
+#include "prt_ec/cmd.h"
 #include "hex_leds.h"
 
 static struct prt_ec_packet pkt_in;
