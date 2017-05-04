@@ -4,43 +4,23 @@
 
 #include "prt_ec/crc16.h"
 
+#include "buffer.h"
 #include "cmd.h"
 
-enum host_cmd_state {
-	HOST_CMD_READY = 0,
-	HOST_CMD_RECEIVED,
-	HOST_CMD_PROCESSING,
-	HOST_CMD_PROCESSED,
-};
+#define RX_BUFSIZE	8
 
+static struct prt_ec_msg rx_msg_array[RX_BUFSIZE];
+static PRT_EC_BUFFER_INIT(rx_msg_buffer, rx_msg_array, RX_BUFSIZE);
 
-struct host_packet *active_pkt;
-static enum host_cmd_state state;
-
-bool host_cmd_is_ready(void)
+int host_pkt_recieved(struct prt_ec_pkt *pkt)
 {
-	return !!(state == HOST_CMD_READY);
-}
-
-int host_pkt_recieved(struct host_packet *host_pkt)
-{
-	struct prt_ec_packet *pkt = &host_pkt->io_pkt;
-
-	if (!(pkt->flags & PRT_EC_FLAG_MOSI)) {
-		/* We received our own transmission or noting */
-		pkt->id = EC_RES_ERROR;
+	if (!(pkt->flags & PRT_EC_FLAG_MOSI))
 		return -1;
-	}
 
-	if (pkt->crc != crc16((uint8_t *)pkt, sizeof(*pkt) - 2)) {
-		/* Packet has invalid crc */
-		pkt->id = EC_RES_INVALID_CHECKSUM;
-		return -1;
-	}
+	if (pkt->crc != crc16((uint8_t *)pkt, sizeof(*pkt) - 2))
+		return -2;
 
-	active_pkt = host_pkt;
-	state = HOST_CMD_RECEIVED;
-	return 0;
+	return prt_ec_buffer_put_pkt(&rx_msg_buffer, pkt);
 }
 
 
@@ -64,16 +44,20 @@ static const struct host_command *find_host_command(int command)
 	return NULL;
 }
 
-static enum prt_ec_result host_cmd_process(void)
+static void host_cmd_process_one(void)
 {
 	const struct host_command *cmd;
-	struct prt_ec_packet *pkt = &active_pkt->io_pkt;
+	struct prt_ec_msg *msg;
 
-	cmd = find_host_command(pkt->id);
-	if (!cmd)
-		return EC_RES_INVALID_COMMAND;
+	if (prt_ec_buffer_empty(&rx_msg_buffer))
+		return;
 
-	return cmd->handler(pkt->data);
+	msg = rx_msg_buffer.tail;
+	cmd = find_host_command(msg->id);
+	if (cmd)
+		cmd->handler(msg->data);
+
+	prt_ec_buffer_inc_tail(&rx_msg_buffer);
 }
 
 bool host_cmd_update(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
@@ -81,19 +65,12 @@ bool host_cmd_update(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
 	UNUSED(currentTimeUs);
 	UNUSED(currentDeltaTimeUs);
 
-	return !!(state == HOST_CMD_RECEIVED);
+	return (prt_ec_buffer_empty(&rx_msg_buffer) == false);
 }
 
 void host_cmd_task_handler(timeUs_t currentTimeUs)
 {
-	struct prt_ec_packet *pkt = &active_pkt->io_pkt;
-
 	UNUSED(currentTimeUs);
 
-	state = HOST_CMD_PROCESSING;
-
-	pkt->id = host_cmd_process();
-
-//	state = HOST_CMD_PROCESSED;
-	state = HOST_CMD_READY;
+	host_cmd_process_one();
 }

@@ -23,57 +23,93 @@
 
 #ifdef USE_PRT_EC_SPI
 
-#include "build/build_config.h"
-#include "config/feature.h"
-#include "fc/config.h"
-
 #include "dma.h"
-#include "io.h"
-#include "io_impl.h"
 #include "nvic.h"
 #include "rcc.h"
-#include "system.h"
 
+#include "drivers/io.h"
+#include "fc/config.h"
 #include "prt_ec/cmd.h"
-#include "hex_leds.h"
+#include "prt_ec/crc16.h"
 
-static struct prt_ec_packet pkt_in;
-//static struct prt_ec_packet pkt_out;
+static struct prt_ec_pkt pkt_in;
+static struct prt_ec_pkt pkt_out;
 
-static struct host_packet spi_pkt;
+static int host_cmd_toggle = -1;
+static bool host_cmd_queued;
 
-void prt_ec_prep_tx_pkt(struct prt_ec_packet *pkt)
+static bool ec_cmd_toggle;
+static bool ec_cmd_acked;
+
+void prt_ec_xfer_done_irq(struct dmaChannelDescriptor_s *cd)
 {
-//	memcpy(pkt_out, spi_pkt->io_pkt, sizeof(pkt_out));
-	UNUSED(pkt);
-}
+	int ret;
+	bool ack_rx = false;
 
-void prt_ec_rx_dma_irq(struct dmaChannelDescriptor_s *cd)
-{
 	DMA_CLEAR_FLAG(cd, DMA_IT_TCIF);
 
-	// Drop cmd packages when busy without notice
-	if (host_cmd_is_ready()) {
-		memcpy(&spi_pkt.io_pkt, &pkt_in, sizeof(pkt_in));
-		host_pkt_recieved(&spi_pkt);
+	/*
+	 * First, parse the incoming message.
+	 */
+
+	if (pkt_in.flags & PRT_EC_FLAG_ACK && !ec_cmd_acked) {
+		/* Flip out toggle bit if we've received an expected ack. */
+		ec_cmd_acked = true;
+		ec_cmd_toggle = !ec_cmd_toggle;
 	}
 
-#if 0
-	int ret;
-
-	if (host_cmd_get_state() != HOST_CMD_READY) {
-		spi_pkt.io_pkt.id = EC_RES_NOT_READY;
-		ret = -EBUSY;
-		goto reply;
-	}
-
-	memcpy(&spi_pkt.io_pkt, &pkt_in, sizeof(pkt_in));
-	host_pkt_recieved(&spi_pkt);
-reply:
 	if (pkt_in.flags & PRT_EC_FLAG_ACKREQ) {
-		prt_ec_prep_tx_pkt(&spi_pkt);
+		/* We've received a CMD (ACK) message */
+		bool toggle = !!(pkt_in.flags & PRT_EC_FLAG_ACKTGL);
+
+		if (toggle != host_cmd_toggle) {
+			host_cmd_queued = false;
+
+			/* This is NOT a resend. */
+			ret = host_pkt_recieved(&pkt_in);
+			if (ret == 0) {
+				host_cmd_queued = true;
+				ack_rx = true;
+			}
+		} else {
+			/*
+			 * We're received a resend.
+			 * Resend ack if we've already pushed this upstream.
+			 */
+			if (host_cmd_queued)
+				ack_rx = true;
+		}
+
+		host_cmd_toggle = toggle;
+	} else {
+		/* We've received a RT data message */
+		host_pkt_recieved(&pkt_in);
 	}
-#endif
+
+
+
+	/*
+	 * Second, prepare our outgoing message for the next xfer.
+	 */
+
+	if (ec_pop_pkt(&pkt_out) != 0) {
+		/* We have no packet to send, make it a dummy one. */
+		pkt_out.id = EC_MSG_ID_INVALID;
+		pkt_out.flags = 0;
+	} else {
+		/* Set our toggle bit if required. */
+		if ((pkt_out.flags & PRT_EC_FLAG_ACKREQ) && ec_cmd_toggle) {
+			pkt_out.flags |= PRT_EC_FLAG_ACKTGL;
+			ec_cmd_acked = false;
+		}
+	}
+
+	/* Ack the received message if requested. */
+	if (ack_rx)
+		pkt_out.flags |= PRT_EC_FLAG_ACK;
+
+	/* Update the CRC */
+	pkt_out.crc = crc16((uint8_t *)&pkt_out, sizeof(pkt_out) - 2);
 }
 
 bool prt_ec_spi_init(void)
@@ -114,9 +150,7 @@ bool prt_ec_spi_init(void)
 
 	/* Configure RX DMA IRQ */
 	dmaInit(DMA1_CH2_HANDLER, OWNER_PRT_EC, 0);
-	dmaSetHandler(DMA1_CH2_HANDLER, prt_ec_rx_dma_irq, NVIC_BUILD_PRIORITY(1, 0), NULL);
-
-	spi_pkt.send_response = prt_ec_prep_tx_pkt;
+	dmaSetHandler(DMA1_CH2_HANDLER, prt_ec_xfer_done_irq, NVIC_BUILD_PRIORITY(1, 0), NULL);
 
 	/* Enable RX DMA */
 	DMA_ITConfig(DMA1_Channel2, DMA_IT_TC | DMA_IT_TC, ENABLE);

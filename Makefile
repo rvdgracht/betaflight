@@ -918,7 +918,8 @@ ifneq ($(filter PRT_EC,$(FEATURES)),)
 TARGET_SRC += \
             prt_ec/crc16.c \
             prt_ec/host_cmd.c \
-            prt_ec/buffer.c
+            prt_ec/buffer.c \
+            prt_ec/ec_cmd.c
 endif
 # end target specific make file checks
 

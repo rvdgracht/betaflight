@@ -44,7 +44,7 @@ static int prt_ec_handle_rx_cmd(uint16_t *data)
 	memcpy(&prt_ec_rx_priv.data, data, PRT_EC_RX_CHANNELS * 2);
 	prt_ec_rx_priv.is_fresh = true;
 
-	return EC_RES_SUCCESS;
+	return 0;
 }
 
 DECLARE_HOST_COMMAND(0x64, prt_ec_handle_rx_cmd);

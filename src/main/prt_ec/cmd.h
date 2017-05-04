@@ -17,58 +17,62 @@
 #define __keep __attribute__((used)) __attribute__((externally_visible))
 #endif
 
-enum prt_ec_result {
-	EC_RES_SUCCESS = 200,
-	EC_RES_NOT_READY,
-	EC_RES_INVALID_COMMAND,
-	EC_RES_INVALID_CHECKSUM,
-	EC_RES_INVALID_PARAM,
-	EC_RES_TIMEOUT,
+/*
+ * Invalid ID.
+ * Used as placeholder for internal and dummy messages.
+ */
+#define EC_MSG_ID_INVALID		0x00
 
-	EC_RES_ERROR = 255,		/* Any other error */
-};
+/*
+ * Flag bit definitions
+ */
+#define PRT_EC_FLAG_ACKREQ              BIT(0)
+#define PRT_EC_FLAG_ACKTGL              BIT(1)
+#define PRT_EC_FLAG_ACK                 BIT(2)
+#define PRT_EC_FLAG_MOSI                BIT(3)
 
-/* Flag bit definitions */
-#define PRT_EC_FLAG_ACKREQ		BIT(0)
-#define PRT_EC_FLAG_ACKTGL		BIT(1)
-#define PRT_EC_FLAG_ACK			BIT(2)
-#define PRT_EC_FLAG_MOSI		BIT(3)
+/*
+ * Low-level protocol packet
+ */
+struct prt_ec_pkt {
+        /* Packet id */
+        uint8_t id;
 
-struct prt_ec_packet {
-	/* Packet ID
-	 *   0 - 200 command
-	 * 200 - 255 response
-	 */
-	uint8_t id;
+        /* Packet flags
+         * bits(s)
+         *   0          ack request
+         *   1          ack toggle
+         *   2          ack
+         *   3          mosi
+         *   4-7        reserved
+         */
+        uint8_t flags;
 
-	/* Packet flags
-	 * bits(s)
-	 *   0		ack request
-	 *   1		ack toggle
-	 *   2          ack
-	 *   3          mosi
-	 *   4-7	reserved
-	 */
-	uint8_t flags;
+        /* Packet data */
+        uint16_t data[PRT_EC_PKT_DATA_WORDS];
 
-	/* Packet data */
-	uint16_t data[PRT_EC_PKT_DATA_WORDS];
-
-	/* Packet crc */
-	uint16_t crc;
+        /* Packet crc */
+        uint16_t crc;
 } __packed;
 
+/*
+ * Upper level message
+ */
+struct prt_ec_msg {
+        /* ID of the message (EC_MSG_ID_...) */
+        uint8_t id;
 
-struct host_packet {
+        /* Request an ack for this message */
+        uint8_t ackreq;
 
-	struct prt_ec_packet io_pkt;
+        /*
+         * Responce message ID
+         * set to EC_MSG_ID_INVALID if not interested in a responce.
+         */
+        uint8_t rid;
 
-	/*
-	 * The driver that receives the command sets up the send_response()
-	 * handler. Once the command is processed this handler is called to
-	 * send the response back to the host.
-	 */
-	void (*send_response)(struct prt_ec_packet *pkt);
+        /* Message payload */
+        uint16_t data[PRT_EC_PKT_DATA_WORDS];
 };
 
 /* Host command */
@@ -84,14 +88,20 @@ struct host_command {
 };
 
 /*
- * Functions
+ * Host Functions
  */
-bool host_cmd_is_ready(void);
-int host_pkt_recieved(struct host_packet *pkt);
-
+int host_pkt_recieved(struct prt_ec_pkt *pkt);
 bool host_cmd_update(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs);
 void host_cmd_task_handler(timeUs_t currentTimeUs);
+
+
+/*
+ * EC Functions
+ */
+int ec_push_msg(struct prt_ec_msg *msg);
+int ec_pop_pkt(struct prt_ec_pkt *pkt);
 
 #define DECLARE_HOST_COMMAND(command, routine)                          \
 	const struct host_command __keep __host_cmd_##command           \
 	__attribute__((section(".hcmds." #command))) = {routine, command}
+
