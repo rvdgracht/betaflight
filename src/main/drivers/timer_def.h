@@ -22,6 +22,8 @@
 
 #if defined(STM32F1)
 
+#if defined(USE_DSHOT) || defined(LED_STRIP)
+
 #define DEF_TIM(tim, chan, pin, flags, out) {\
     tim,\
     IO_TAG(pin),\
@@ -31,6 +33,18 @@
     CONCAT(EXPAND(DEF_TIM_DMA__ ## tim ## _ ## chan), _CHANNEL),\
     CONCAT(EXPAND(DEF_TIM_DMA__ ## tim ## _ ## chan), _HANDLER)\
     }
+
+#else
+
+#define DEF_TIM(tim, chan, pin, flags, out) {\
+    tim,\
+    IO_TAG(pin),\
+    EXPAND(DEF_CHAN_ ## chan),\
+    flags,\
+    (DEF_CHAN_ ## chan ## _OUTPUT | out) \
+    }
+
+#endif
 
 #define DEF_DMA_CHANNEL(tim, chan) CONCAT(EXPAND(DEF_TIM_DMA__ ## tim ## _ ## chan), _CHANNEL)
 #define DEF_DMA_HANDLER(tim, chan) CONCAT(EXPAND(DEF_TIM_DMA__ ## tim ## _ ## chan), _HANDLER)
