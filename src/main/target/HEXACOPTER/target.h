@@ -52,9 +52,6 @@
 #define UART1_TX_PIN            PA9
 #define UART1_RX_PIN            PA10
 
-/* Workaround for timer definition bug */
-#define LED_STRIP
-
 #define USE_I2C
 #define USE_I2C_DEVICE_2
 #define I2C_DEVICE              (I2CDEV_2)
@@ -77,19 +74,6 @@
 
 #define DEFAULT_FEATURES	(FEATURE_FAILSAFE)
 
-// Just in case..
-#ifdef USE_PWM
-# undef USE_PWM
-#endif
-
-#ifdef USE_PPM
-# undef USE_PPM
-#endif
-
-#ifdef SERIAL_RX
-# undef SERIAL_RX
-#endif
-
 // alternative defaults for target
 #define TARGET_CONFIG
 
@@ -107,3 +91,18 @@
 #define USABLE_TIMER_CHANNEL_COUNT	10
 
 #define USED_TIMERS	(TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(4) | TIM_N(8))
+
+/* Disable unused features */
+#undef USE_PWM
+#undef USE_PPM
+#undef SERIAL_RX
+
+#undef BLACKBOX
+#undef GPS
+#undef TELEMETRY
+#undef TELEMETRY_FRSKY
+#undef TELEMETRY_HOTT
+#undef TELEMETRY_LTM
+#undef TELEMETRY_SMARTPORT
+//#undef USE_SERVOS
+#undef USE_RESOURCE_MGMT

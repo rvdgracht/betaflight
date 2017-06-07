@@ -1,6 +1,6 @@
 F1_TARGETS += $(TARGET)
 FLASH_SIZE = 128
-FEATURES   = HIGHEND PRT_EC
+FEATURES   = PRT_EC
 
 TARGET_SRC = \
 	drivers/accgyro_mpu.c           \
