@@ -81,6 +81,12 @@ SECTIONS
     KEEP (*(SORT(.fini_array.*)))
     PROVIDE_HIDDEN (__fini_array_end = .);
   } >FLASH
+  .hcmds :
+  {
+    __hcmds_start = .;
+    KEEP(*(SORT(.hcmds*)))
+    __hcmds_end = .;
+  } >FLASH
 
   /* used by the startup to initialize data */
   _sidata = .;

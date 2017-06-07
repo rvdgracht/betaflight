@@ -63,25 +63,18 @@
 
 #define USE_SPI
 #define USE_SPI_DEVICE_1
-
-#define USE_RX_SPI_SLAVE
-#define RX_SPI_INSTANCE         SPI1
+#define USE_PRT_EC_SPI
 
 #define SPI1_NSS_PIN		PA15
 #define SPI1_SCK_PIN            PB3
 #define SPI1_MISO_PIN           PB4
 #define SPI1_MOSI_PIN           PB5
 
-#define DEFAULT_RX_FEATURE      FEATURE_RX_SPI
-
-#if 0	// SPI
-
-#define USE_RX_V202
-#define RX_SPI_DEFAULT_PROTOCOL RX_SPI_NRF24_V202_250K	// Adjust..
-
-#endif
-
 #define USE_RX_MSP
+#define USE_RX_PRT_EC
+
+#define DEFAULT_RX_FEATURE      FEATURE_RX_PRT_EC
+
 #define DEFAULT_FEATURES	(FEATURE_FAILSAFE)
 
 // Just in case..
