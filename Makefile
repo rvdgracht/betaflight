@@ -914,7 +914,7 @@ TARGET_SRC += $(VCP_SRC)
 endif
 
 ifneq ($(filter PRT_EC,$(FEATURES)),)
-SRC += \
+TARGET_SRC += \
             prt_ec/crc16.c \
             prt_ec/host_cmd.c
 endif
