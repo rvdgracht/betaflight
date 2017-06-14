@@ -736,7 +736,12 @@ void useRcControlsConfig(modeActivationCondition_t *modeActivationConditions, mo
     motorConfig = motorConfigToUse;
     pidProfile = pidProfileToUse;
 
+#ifdef USE_RX_PRT_EC
+    isUsingSticksToArm = false;
+    UNUSED(modeActivationConditions);
+#else
     isUsingSticksToArm = !isModeActivationConditionPresent(modeActivationConditions, BOXARM);
+#endif
 }
 
 void resetAdjustmentStates(void)

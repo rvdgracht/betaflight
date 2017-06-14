@@ -1,6 +1,7 @@
 
 #include <stdbool.h>
 
+#include "fc/fc_core.h"
 #include "rx/rx.h"
 #include "prt_ec/cmd.h"
 #include "prt_ec/host_commands.h"
@@ -52,6 +53,19 @@ static int prt_ec_handle_cmd_rc_data(void *data)
 	return 0;
 }
 DECLARE_HOST_COMMAND(EC_MSG_ID_SET_RC_DATA, prt_ec_handle_cmd_rc_data);
+
+static int prt_ec_handle_cmd_armed(void *data)
+{
+	struct host_cmd_set_armed *cmd_armed = (void *)data;
+
+	if (cmd_armed->armed)
+		mwArm();
+	else
+		mwDisarm();
+	return 0;
+}
+DECLARE_HOST_COMMAND(EC_MSG_ID_SET_ARMED, prt_ec_handle_cmd_armed);
+
 
 
 #endif /* USE_RX_PRT_EC */

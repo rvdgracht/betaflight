@@ -92,3 +92,13 @@ struct ec_responce_gpio_states {
 struct host_cmd_set_rc_data {
 	uint16_t channel[14];
 } __packed;
+
+
+/*
+ * Host command setting armed state.
+ */
+#define EC_MSG_ID_SET_ARMED                     0x65
+struct host_cmd_set_armed {
+	uint16_t armed;
+	uint16_t reserved[13];
+} __packed;
