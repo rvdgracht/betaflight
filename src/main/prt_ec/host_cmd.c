@@ -55,7 +55,7 @@ static void host_cmd_process_one(void)
 	msg = rx_msg_buffer.tail;
 	cmd = find_host_command(msg->id);
 	if (cmd)
-		cmd->handler(msg->data);
+		cmd->handler((void *)msg->data);
 
 	prt_ec_buffer_inc_tail(&rx_msg_buffer);
 }

@@ -1,9 +1,9 @@
 
 #include <stdbool.h>
-#include <string.h>
 
 #include "rx/rx.h"
 #include "prt_ec/cmd.h"
+#include "prt_ec/host_commands.h"
 
 #if defined(USE_RX_PRT_EC) && defined(USE_PRT_EC_SPI)
 
@@ -39,14 +39,19 @@ void prt_ec_rx_init(const rxConfig_t *rxConfig, rxRuntimeConfig_t *rxRuntimeConf
 	rxRuntimeConfig->rcReadRawFn = get_raw_rx;
 }
 
-static int prt_ec_handle_rx_cmd(uint16_t *data)
+static int prt_ec_handle_cmd_rc_data(void *data)
 {
-	memcpy(&prt_ec_rx_priv.data, data, PRT_EC_RX_CHANNELS * 2);
+	struct host_cmd_set_rc_data *cmd_rc_data = data;
+	int i;
+
+	for (i = 0; i < PRT_EC_RX_CHANNELS; i++)
+		prt_ec_rx_priv.data[i] = cmd_rc_data->channel[i];
+
 	prt_ec_rx_priv.is_fresh = true;
 
 	return 0;
 }
+DECLARE_HOST_COMMAND(EC_MSG_ID_SET_RC_DATA, prt_ec_handle_cmd_rc_data);
 
-DECLARE_HOST_COMMAND(0x64, prt_ec_handle_rx_cmd);
 
 #endif /* USE_RX_PRT_EC */

@@ -83,3 +83,12 @@ struct ec_responce_gpio_states {
         /* Each bit represents a GPIO. (0 = low, 1 = high) */
         uint16_t data[6];
 } __packed;
+
+
+/*
+ * Host command for setting RC data.
+ */
+#define EC_MSG_ID_SET_RC_DATA                   0x64
+struct host_cmd_set_rc_data {
+	uint16_t channel[14];
+} __packed;

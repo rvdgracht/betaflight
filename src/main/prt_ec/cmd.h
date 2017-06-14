@@ -81,7 +81,7 @@ struct host_command {
 	 * Handler for the command.  Args points to context for handler.
 	 * Returns result status (EC_RES_*).
 	 */
-	int (*handler)(uint16_t *data);
+	int (*handler)(void *data);
 
 	/* Command code */
 	int command;
@@ -104,4 +104,3 @@ int ec_pop_pkt(struct prt_ec_pkt *pkt);
 #define DECLARE_HOST_COMMAND(command, routine)                          \
 	const struct host_command __keep __host_cmd_##command           \
 	__attribute__((section(".hcmds." #command))) = {routine, command}
-
