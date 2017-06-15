@@ -77,7 +77,7 @@
 // alternative defaults for target
 #define TARGET_CONFIG
 
-#define TARGET_DEFAULT_MIXER	MIXER_HEX6
+#define TARGET_DEFAULT_MIXER	MIXER_HEX6X
 
 //#define SONAR
 //#define SONAR_ECHO_PIN          PB1
