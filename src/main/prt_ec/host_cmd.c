@@ -14,12 +14,6 @@ static PRT_EC_BUFFER_INIT(rx_msg_buffer, rx_msg_array, RX_BUFSIZE);
 
 int host_pkt_recieved(struct prt_ec_pkt *pkt)
 {
-	if (!(pkt->flags & PRT_EC_FLAG_MOSI))
-		return -1;
-
-	if (pkt->crc != crc16((uint8_t *)pkt, sizeof(*pkt) - 2))
-		return -2;
-
 	return prt_ec_buffer_put_pkt(&rx_msg_buffer, pkt);
 }
 

@@ -41,16 +41,15 @@ static bool host_cmd_queued;
 static bool ec_cmd_toggle;
 static bool ec_cmd_acked;
 
-void prt_ec_xfer_done_irq(struct dmaChannelDescriptor_s *cd)
+static int handle_rx(bool *ack_rx)
 {
 	int ret;
-	bool ack_rx = false;
 
-	DMA_CLEAR_FLAG(cd, DMA_IT_TCIF);
+	if (!(pkt_in.flags & PRT_EC_FLAG_MOSI))
+		return -1;
 
-	/*
-	 * First, parse the incoming message.
-	 */
+	if (pkt_in.crc != crc16((uint8_t *)&pkt_in, sizeof(pkt_in) - 2))
+		return -2;
 
 	if (pkt_in.flags & PRT_EC_FLAG_ACK && !ec_cmd_acked) {
 		/* Flip out toggle bit if we've received an expected ack. */
@@ -86,12 +85,11 @@ void prt_ec_xfer_done_irq(struct dmaChannelDescriptor_s *cd)
 		host_pkt_recieved(&pkt_in);
 	}
 
+	return 0;
+}
 
-
-	/*
-	 * Second, prepare our outgoing message for the next xfer.
-	 */
-
+static void handle_tx(bool ack)
+{
 	if (ec_pop_pkt(&pkt_out) != 0) {
 		/* We have no packet to send, make it a dummy one. */
 		pkt_out.id = EC_MSG_ID_INVALID;
@@ -105,11 +103,41 @@ void prt_ec_xfer_done_irq(struct dmaChannelDescriptor_s *cd)
 	}
 
 	/* Ack the received message if requested. */
-	if (ack_rx)
+	if (ack)
 		pkt_out.flags |= PRT_EC_FLAG_ACK;
 
 	/* Update the CRC */
 	pkt_out.crc = crc16((uint8_t *)&pkt_out, sizeof(pkt_out) - 2);
+}
+
+void prt_ec_xfer_done_irq(struct dmaChannelDescriptor_s *cd)
+{
+	int ret;
+	bool ack_rx = false;
+
+	/* Wait until transceive complete.
+	 * This checks the state flag as well as follows the
+	 * procedure on the Reference Manual (RM0008 rev 16
+	 * Section 25.3.9 page 722)
+	 */
+
+	while(!(SPI1->SR & SPI_I2S_FLAG_TXE));
+	while(SPI1->SR & SPI_I2S_FLAG_BSY);
+
+	/*
+	 * First, parse the incoming message.
+	 */
+
+	handle_rx(&ack_rx);
+
+	/*
+	 * Second, prepare our outgoing message for the next xfer.
+	 */
+
+	handle_tx(ack_rx);
+
+
+	DMA_CLEAR_FLAG(cd, DMA_IT_TCIF);
 }
 
 bool prt_ec_spi_init(void)
